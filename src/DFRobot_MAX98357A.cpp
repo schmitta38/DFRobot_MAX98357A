@@ -10,7 +10,9 @@
  * @date  2022-01-21
  * @url  https://github.com/DFRobot/DFRobot_MAX98357A
  */
+
 #include "DFRobot_MAX98357A.h"
+//#define DEBUG
 
 uint8_t DFRobot_MAX98357A::remoteAddress[6];   // Address of the connected remote Bluetooth device
 
@@ -29,7 +31,7 @@ Biquad _filterLHP[NUMBER_OF_FILTER];   // Left channel high-pass filter
 Biquad _filterRHP[NUMBER_OF_FILTER];   // Right channel high-pass filter
 
 char fileName[100];
-uint8_t SDAmplifierMark = SD_AMPLIFIER_STOP;   // SD card play flag
+uint8_t DFRobot_MAX98357A::SDAmplifierMark = SD_AMPLIFIER_STOP;   // SD card play flag
 xTaskHandle xPlayWAV = NULL;   // SD card play Task
 String _musicList[100];   // SD card music list
 uint8_t musicCount = 0;   // SD card music count
@@ -570,6 +572,16 @@ void DFRobot_MAX98357A::playWAV(void *arg)
     fread(&(wav->header.bytesPerSecond), 4, 1, wav->fp);
     fread(&(wav->header.blockAlign), 2, 1, wav->fp);
     fread(&(wav->header.bitsPerSample), 2, 1, wav->fp);
+    #ifdef DEBUG
+      Serial.print("Num channels: ");
+      Serial.println(wav->header.numChannels);
+      Serial.print("Sample rate: ");
+      Serial.println(wav->header.sampleRate);
+      Serial.print("Bytes per second: ");
+      Serial.println(wav->header.bytesPerSecond);
+      Serial.print("Bits per sample: ");
+      Serial.println(wav->header.bitsPerSample);
+    #endif
     while(1){
       if(fread(&wav->header.dataType1, 1, 1, wav->fp) != 1){
         DBG("Unable to read data chunk ID.");
@@ -585,7 +597,13 @@ void DFRobot_MAX98357A::playWAV(void *arg)
       }
     }
 
-    i2s_set_sample_rates(I2S_NUM_0, wav->header.sampleRate);   // Set I2S sampling rate based on the parsed audio sampling frequency
+    // Set I2S sampling rate based on the parsed audio sampling frequency
+    // In case of mono channel, the sample rate need to be divided by 2
+    if (wav->header.numChannels == 1) {
+      i2s_set_sample_rates(I2S_NUM_0, wav->header.sampleRate/2);
+    } else {
+      i2s_set_sample_rates(I2S_NUM_0, wav->header.sampleRate);
+    }
 
     while(fread(&wav->header.data, 1 , 800 , wav->fp)){
       audioDataProcessCallback((uint8_t *)&wav->header.data, 800);   // Send the parsed audio data to the amplifier broadcast function
