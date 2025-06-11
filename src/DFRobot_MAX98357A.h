@@ -120,6 +120,8 @@ public:
    * @note Only support English for path name of music files and WAV for their format currently
    */
   void playSDMusic(const char *Filename);
+  void stopSDMusic();
+  void enableLoop();
 
   /**
    * @fn SDPlayerControl
