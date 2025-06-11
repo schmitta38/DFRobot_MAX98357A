@@ -35,6 +35,7 @@ uint8_t DFRobot_MAX98357A::SDAmplifierMark = SD_AMPLIFIER_STOP;   // SD card pla
 xTaskHandle xPlayWAV = NULL;   // SD card play Task
 String _musicList[100];   // SD card music list
 uint8_t musicCount = 0;   // SD card music count
+static bool loopTrack = false;
 
 /**
  * @struct sWavParse_t
@@ -301,6 +302,17 @@ void DFRobot_MAX98357A::playSDMusic(const char *musicName)
   SDPlayerControl(SD_AMPLIFIER_PLAY);
 }
 
+void DFRobot_MAX98357A::stopSDMusic()
+{
+  loopTrack = false;
+  SDPlayerControl(SD_AMPLIFIER_STOP);
+}
+
+void DFRobot_MAX98357A::enableLoop()
+{
+  loopTrack = true;
+}
+
 void DFRobot_MAX98357A::SDPlayerControl(uint8_t CMD)
 {
   SDAmplifierMark = CMD;
@@ -515,64 +527,70 @@ void DFRobot_MAX98357A::audioDataProcessCallback(const uint8_t *data, uint32_t l
 
 void DFRobot_MAX98357A::playWAV(void *arg)
 {
+  bool firstTime = true;
   while(1){
     while(SD_AMPLIFIER_STOP == SDAmplifierMark){
       vTaskDelay(100);
     }
 
-    sWavInfo_t * wav = (sWavInfo_t *)calloc(1, sizeof(sWavInfo_t));
-    if(wav == NULL){
-      DBG("Unable to allocate WAV struct.");
-      SDAmplifierMark = SD_AMPLIFIER_STOP;
-      continue;
-    }
+    firstTime = true;
+    while (firstTime || loopTrack) {
+      firstTime = false;
+      
+      log_v("Playing %s %d\n", fileName, loopTrack);
 
-    wav->fp = fopen(fileName, "rb");
-    if(wav->fp == NULL){
-      DBG("Unable to open wav file.");
-      DBG(fileName);
-      SDAmplifierMark = SD_AMPLIFIER_STOP;
-      continue;
-    }
-    if(fread(&(wav->header.riffType), 1, 4, wav->fp) != 4){
-      DBG("couldn't read RIFF_ID.");
-      SDAmplifierMark = SD_AMPLIFIER_STOP;
-      continue;  /* bad error "couldn't read RIFF_ID" */
-    }
-    if(strncmp("RIFF", wav->header.riffType, 4)){
-      DBG("RIFF descriptor not found.") ;
-      SDAmplifierMark = SD_AMPLIFIER_STOP;
-      continue;
-    }
-    fread(&(wav->header.riffSize), 4, 1, wav->fp);
-    if(fread(&wav->header.waveType, 1, 4, wav->fp) != 4){
-      DBG("couldn't read format");
-      SDAmplifierMark = SD_AMPLIFIER_STOP;
-      continue;  /* bad error "couldn't read format" */
-    }
-    if(strncmp("WAVE", wav->header.waveType, 4)){
-      DBG("WAVE chunk ID not found.") ;
-      SDAmplifierMark = SD_AMPLIFIER_STOP;
-      continue;
-    }
-    if(fread(&(wav->header.formatType), 1, 4, wav->fp) != 4){
-      DBG("couldn't read format_ID");
-      SDAmplifierMark = SD_AMPLIFIER_STOP;
-      continue;  /* bad error "couldn't read format_ID" */
-    }
-    if(strncmp("fmt", wav->header.formatType, 3)){
-      DBG("fmt chunk format not found.");
-      SDAmplifierMark = SD_AMPLIFIER_STOP;
-      continue;
-    }
-    fread(&(wav->header.formatSize), 4, 1, wav->fp);
-    fread(&(wav->header.compressionCode), 2, 1, wav->fp);
-    fread(&(wav->header.numChannels), 2, 1, wav->fp);
-    fread(&(wav->header.sampleRate), 4, 1, wav->fp);
-    fread(&(wav->header.bytesPerSecond), 4, 1, wav->fp);
-    fread(&(wav->header.blockAlign), 2, 1, wav->fp);
-    fread(&(wav->header.bitsPerSample), 2, 1, wav->fp);
-    #ifdef DEBUG
+      sWavInfo_t * wav = (sWavInfo_t *)calloc(1, sizeof(sWavInfo_t));
+      if(wav == NULL){
+	DBG("Unable to allocate WAV struct.");
+	SDAmplifierMark = SD_AMPLIFIER_STOP;
+	continue;
+      }
+      wav->fp = fopen(fileName, "rb");
+      if(wav->fp == NULL){
+	DBG("Unable to open wav file.");
+	DBG(fileName);
+	SDAmplifierMark = SD_AMPLIFIER_STOP;
+	continue;
+      }
+      if(fread(&(wav->header.riffType), 1, 4, wav->fp) != 4){
+	DBG("couldn't read RIFF_ID.");
+	SDAmplifierMark = SD_AMPLIFIER_STOP;
+	continue;  /* bad error "couldn't read RIFF_ID" */
+      }
+      if(strncmp("RIFF", wav->header.riffType, 4)){
+	DBG("RIFF descriptor not found.") ;
+	SDAmplifierMark = SD_AMPLIFIER_STOP;
+	continue;
+      }
+      fread(&(wav->header.riffSize), 4, 1, wav->fp);
+      if(fread(&wav->header.waveType, 1, 4, wav->fp) != 4){
+	DBG("couldn't read format");
+	SDAmplifierMark = SD_AMPLIFIER_STOP;
+	continue;  /* bad error "couldn't read format" */
+      }
+      if(strncmp("WAVE", wav->header.waveType, 4)){
+	DBG("WAVE chunk ID not found.") ;
+	SDAmplifierMark = SD_AMPLIFIER_STOP;
+	continue;
+      }
+      if(fread(&(wav->header.formatType), 1, 4, wav->fp) != 4){
+	DBG("couldn't read format_ID");
+	SDAmplifierMark = SD_AMPLIFIER_STOP;
+	continue;  /* bad error "couldn't read format_ID" */
+      }
+      if(strncmp("fmt", wav->header.formatType, 3)){
+	DBG("fmt chunk format not found.");
+	SDAmplifierMark = SD_AMPLIFIER_STOP;
+	continue;
+      }
+      fread(&(wav->header.formatSize), 4, 1, wav->fp);
+      fread(&(wav->header.compressionCode), 2, 1, wav->fp);
+      fread(&(wav->header.numChannels), 2, 1, wav->fp);
+      fread(&(wav->header.sampleRate), 4, 1, wav->fp);
+      fread(&(wav->header.bytesPerSecond), 4, 1, wav->fp);
+      fread(&(wav->header.blockAlign), 2, 1, wav->fp);
+      fread(&(wav->header.bitsPerSample), 2, 1, wav->fp);
+#ifdef DEBUG
       Serial.print("Num channels: ");
       Serial.println(wav->header.numChannels);
       Serial.print("Sample rate: ");
@@ -581,43 +599,47 @@ void DFRobot_MAX98357A::playWAV(void *arg)
       Serial.println(wav->header.bytesPerSecond);
       Serial.print("Bits per sample: ");
       Serial.println(wav->header.bitsPerSample);
-    #endif
-    while(1){
-      if(fread(&wav->header.dataType1, 1, 1, wav->fp) != 1){
-        DBG("Unable to read data chunk ID.");
-        free(wav);
-        break;
+#endif
+      while(1){
+	if(fread(&wav->header.dataType1, 1, 1, wav->fp) != 1){
+	  DBG("Unable to read data chunk ID.");
+	  free(wav);
+	  break;
+	}
+	if(strncmp("d", wav->header.dataType1, 1) == 0){
+	  fread(&wav->header.dataType2, 3, 1, wav->fp);
+	  if(strncmp("ata", wav->header.dataType2, 3) == 0){
+	    fread(&(wav->header.dataSize),4,1,wav->fp);
+	    break;
+	  }
+	}
       }
-      if(strncmp("d", wav->header.dataType1, 1) == 0){
-        fread(&wav->header.dataType2, 3, 1, wav->fp);
-        if(strncmp("ata", wav->header.dataType2, 3) == 0){
-          fread(&(wav->header.dataSize),4,1,wav->fp);
-          break;
-        }
-      }
-    }
 
-    // Set I2S sampling rate based on the parsed audio sampling frequency
-    // In case of mono channel, the sample rate need to be divided by 2
-    if (wav->header.numChannels == 1) {
-      i2s_set_sample_rates(I2S_NUM_0, wav->header.sampleRate/2);
-    } else {
-      i2s_set_sample_rates(I2S_NUM_0, wav->header.sampleRate);
-    }
-
-    while(fread(&wav->header.data, 1 , 800 , wav->fp)){
-      audioDataProcessCallback((uint8_t *)&wav->header.data, 800);   // Send the parsed audio data to the amplifier broadcast function
-      if(SD_AMPLIFIER_STOP == SDAmplifierMark){
-        break;
+      // Set I2S sampling rate based on the parsed audio sampling frequency
+      // In case of mono channel, the sample rate need to be divided by 2
+      if (wav->header.numChannels == 1) {
+	i2s_set_sample_rates(I2S_NUM_0, wav->header.sampleRate/2);
+      } else {
+	i2s_set_sample_rates(I2S_NUM_0, wav->header.sampleRate);
       }
-      while(SD_AMPLIFIER_PAUSE == SDAmplifierMark){
-        vTaskDelay(100);
-      }
-    }
 
-    fclose(wav->fp);
-    free(wav);
-    SDAmplifierMark = SD_AMPLIFIER_STOP;
+      while(fread(&wav->header.data, 1 , 800 , wav->fp)){
+	audioDataProcessCallback((uint8_t *)&wav->header.data, 800);   // Send the parsed audio data to the amplifier broadcast function
+	if(SD_AMPLIFIER_STOP == SDAmplifierMark){
+	  break;
+	}
+	while(SD_AMPLIFIER_PAUSE == SDAmplifierMark){
+	  vTaskDelay(100);
+	}
+      }
+
+      fclose(wav->fp);
+      free(wav);
+      if (!loopTrack) {
+        SDAmplifierMark = SD_AMPLIFIER_STOP;
+      }
+      log_v("Done playing %s %d\n", fileName, loopTrack);
+    }
     vTaskDelay(100);
   }
   vTaskDelete(xPlayWAV);
